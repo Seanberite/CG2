@@ -22,6 +22,8 @@
 #include <sstream>
 
 
+
+
 // Model-to-world matrix
 // Modify this matrix.
 // See below for how it is applied to your model.
@@ -42,13 +44,17 @@ float xMouseOrigin, yMouseOrigin;
 float speed = 0.1;
 bool is_w_pressed,is_s_pressed,is_a_pressed, is_d_pressed, isLeftMousePressed;
 
+
+
 // Globals
 // * Model(s)
 Model *teapot, *skySphere;
 // * Reference(s) to shader program(s)
-GLuint program;
+GLuint program, skyBoxShader;
 // * Texture(s)
-GLuint maskrosTex;
+GLuint maskrosTex, spaceTex;
+
+GLfloat t;
 
 
 void updatePlayerPosition(){
@@ -123,6 +129,9 @@ void keyboardFunc(unsigned char key, int x, int y){
 }
 void passiveMouse(int x, int y){
 	if (x != xMouseOrigin || y != xMouseOrigin){
+    lookingDir = Normalize(VectorSub(l,p));
+    rightDir = ScalarMult(Normalize(CrossProduct(lookingDir, v)),speed);
+
 		float deltaX = (xMouseOrigin - (float)x)/2000.0;
 		float deltaY = (yMouseOrigin - (float)y)/2000.0;
 		glutWarpPointer(xMouseOrigin, yMouseOrigin);
@@ -143,8 +152,36 @@ void mouse(int button, int state, int x, int y){
   }
   if (button == 2 && state == GLUT_UP){
     isLeftMousePressed = false;
-    printf("%s\n", "hej");
   }
+}
+
+void drawSky(){
+  glEnable(GL_BLEND);
+
+  //activate the program, and set its variables
+  mat4 cameraSkyBox = mat3tomat4(mat4tomat3(camMatrix));
+	glUseProgram(skyBoxShader);
+	glUniformMatrix4fv(glGetUniformLocation(skyBoxShader, "camSkyMatrix"), 1, GL_TRUE, cameraSkyBox.m);
+	//draw the model
+  glDisable(GL_DEPTH_TEST);
+  glCullFace(GL_FRONT);
+  DrawModel(skySphere, skyBoxShader, "in_Position", NULL, "in_TexCoord");
+
+	printError("display sky");
+  glDisable(GL_BLEND);
+}
+
+void drawTeapot(){
+  //activate the program, and set its variables
+	glUseProgram(program);
+  glEnable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+  glUniform1f(glGetUniformLocation(program, "time"), t);
+  glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, mdlMatrix.m);
+	glUniformMatrix4fv(glGetUniformLocation(program, "camMatrix"), 1, GL_TRUE, camMatrix.m);
+	//draw the model
+	DrawModel(teapot, program, "in_Position", "in_Normal", "in_TexCoord");
+	printError("display teapot");
 }
 
 void init(void)
@@ -166,29 +203,45 @@ void init(void)
   rightDir = Normalize(CrossProduct(lookingDir, v));
   xMouseOrigin = 500;
   yMouseOrigin = 1000;
-  mdlMatrix = T(0,0,-3);
+  mdlMatrix = T(0,0,-10);
 	projectionMatrix = perspective(90, 1.0, 0.1, 1000);
 	camMatrix = lookAtv(p, l, v);
 
-
-
-
 	// Load and compile shader
-	program = loadShaders("lab0.vert", "lab0.frag");
-	printError("init shader");
+	program = loadShaders("shaders/lab0.vert", "shaders/lab0.frag");
+	printError("init shader 1");
+  skyBoxShader = loadShaders("shaders/skySphere.vert", "shaders/skySphere.frag");
+	printError("init shader 2");
+
+  // Upload constant matrixes to all programs
   glUseProgram(program);
 	glUniformMatrix4fv(glGetUniformLocation(program, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
+  glUseProgram(skyBoxShader);
+  glUniformMatrix4fv(glGetUniformLocation(program, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
 
-	// Upload geometry to the GPU:
+
+	// Load initial objects
 	teapot = LoadModelPlus("objects/teapot.obj");
-	printError("load models");
+	printError("load models 1");
+  skySphere = LoadModelPlus("objects/sphere.obj");
+	printError("load models 2");
 
 	// Load textures
-	LoadTGATextureSimple("textures/maskros512.tga",&maskrosTex);
-	printError("load textures");
+	LoadTGATextureSimple("textures/maskros512.tga", &maskrosTex);
+	printError("load textures 1");
+  LoadTGATextureSimple("textures/space.tga", &spaceTex);
+	printError("load textures 2");
+
+
+  glUseProgram(program);
   glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, maskrosTex);
   glUniform1i(glGetUniformLocation(program, "objectTexture"), 0);
+
+  glUseProgram(skyBoxShader);
+  glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, spaceTex);
+  glUniform1i(glGetUniformLocation(skyBoxShader, "skyBoxTexture"), 1);
 
 }
 
@@ -196,26 +249,17 @@ void init(void)
 void display(void)
 {
   updatePlayerPosition();
+  t = (GLfloat)glutGet(GLUT_ELAPSED_TIME)/1000;
 
   camMatrix = lookAtv(p,l,v);
-  GLfloat t = (GLfloat)glutGet(GLUT_ELAPSED_TIME)/1000;
   //printf("%f\n",t);
-	printError("pre display");
+
 
 	// clear the screen
 	glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-
-	//activate the program, and set its variables
-	glUseProgram(program);
-  glUniform1f(glGetUniformLocation(program, "time"), t);
-  glUniformMatrix4fv(glGetUniformLocation(program, "mdlMatrix"), 1, GL_TRUE, mdlMatrix.m);
-	glUniformMatrix4fv(glGetUniformLocation(program, "camMatrix"), 1, GL_TRUE, camMatrix.m);
-
-
-	//draw the model
-	DrawModel(teapot, program, "in_Position", "in_Normal", "in_TexCoord");
-
-	printError("display");
+  printError("pre display");
+  drawSky();
+  drawTeapot();
 
 	glutSwapBuffers();
 }
